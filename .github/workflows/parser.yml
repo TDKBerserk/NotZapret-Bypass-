@@ -1,103 +1,28 @@
-name: 🔄 NotZapret Parser Auto-Update
+name: NotZapret Parser
 
 on:
   schedule:
     - cron: '0 */6 * * *'
   workflow_dispatch:
-  push:
-    paths:
-      - 'tg.txt'
-      - 'sources.txt'
-      - 'sni_list.txt'
-      - 'ip_list.txt'
-      - 'NotZapret_Parser.py'
 
 permissions:
   contents: write
-  actions: write
 
 jobs:
-  parse_and_update:
-    name: 🚀 Парсинг и обновление конфигов
+  parser:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    
     steps:
-      - name: 📥 Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-          
-      - name: 🐍 Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-          
-      - name: 📦 Install dependencies
+      - run: pip install requests
+      - name: Run collector
+        run: python collector.py
+      - name: Commit results
         run: |
-          pip install --upgrade pip
-          pip install telethon aiohttp requests pyyaml
-          
-      - name: 🔧 Install Xray
-        run: |
-          wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
-          unzip -q Xray-linux-64.zip
-          chmod +x xray
-          sudo mv xray /usr/local/bin/
-          xray version
-          
-      - name: ⚡ Run NotZapret Parser
-        env:
-          API_ID: ${{ secrets.API_ID }}
-          API_HASH: ${{ secrets.API_HASH }}
-        run: |
-          echo "📡 Starting parser..."
-          python NotZapret_Parser.py
-          
-      - name: ✅ Check results
-        run: |
-          echo "📊 Результаты:"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          if [ -f whitelist.txt ]; then
-            WHITE_COUNT=$(wc -l < whitelist.txt)
-            echo "✅ WHITELIST: $WHITE_COUNT конфигов"
-          else
-            echo "❌ whitelist.txt не создан"
-          fi
-          
-          if [ -f blacklist.txt ]; then
-            BLACK_COUNT=$(wc -l < blacklist.txt)
-            echo "❌ BLACKLIST: $BLACK_COUNT конфигов"
-          else
-            echo "ℹ️ blacklist.txt не создан"
-          fi
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          
-      - name: 📝 Commit results
-        run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-          git add whitelist.txt whitelist.yaml blacklist.txt blacklist.yaml || true
-          if git diff --staged --quiet; then
-            echo "ℹ️ Нет изменений для коммита"
-          else
-            git commit -m "🔄 Auto-update: $(date -u '+%Y-%m-%d %H:%M:%S')"
-            echo "✅ Изменения закоммичены"
-          fi
-          
-      - name: 📤 Push changes
-        run: |
-          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
-          git push origin main
-          
-      - name: 📦 Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: notzapret-results-${{ github.run_number }}
-          retention-days: 30
-          path: |
-            whitelist.txt
-            whitelist.yaml
-            blacklist.txt
-            blacklist.yaml
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add whitelist.txt blacklist.txt whitelist_base64.txt blacklist_base64.txt all_configs.txt summary.json
+          git commit -m "Auto-update: $(date -u '+%Y-%m-%d %H:%M:%S')" || exit 0
+          git push
