@@ -1,0 +1,2 @@
+vless://b5ca5ab3-8cbc-4ac3-89da-9cd360589ecb@213.130.137.10:443?flow=xtls-rprx-vision&sni=panel.freesavesafe.com&fingerprint=firefox&pbk=BvR2i3CJEL9QwNAWKqkkHY3rnqJdOFLyKw5DZ9sA2C8&sid=812609fa663c57fb#NotZapret%20%7C%20Bypass
+vless://b5ca5ab3-8cbc-4ac3-89da-9cd360589ecb@213.130.137.180:443?flow=xtls-rprx-vision&sni=panel.freesavesafe.com&fingerprint=firefox&pbk=BvR2i3CJEL9QwNAWKqkkHY3rnqJdOFLyKw5DZ9sA2C8&sid=812609fa663c57fb#NotZapret%20%7C%20Bypass
