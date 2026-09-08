@@ -12,6 +12,10 @@ on:
       - 'ip_list.txt'
       - 'NotZapret_Parser.py'
 
+permissions:
+  contents: write
+  actions: write
+
 jobs:
   parse_and_update:
     name: 🚀 Парсинг и обновление конфигов
@@ -23,6 +27,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
           
       - name: 🐍 Setup Python
         uses: actions/setup-python@v5
@@ -73,7 +78,7 @@ jobs:
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add whitelist.* blacklist.* || true
+          git add whitelist.txt whitelist.yaml blacklist.txt blacklist.yaml || true
           if git diff --staged --quiet; then
             echo "ℹ️ Нет изменений для коммита"
           else
@@ -82,11 +87,9 @@ jobs:
           fi
           
       - name: 📤 Push changes
-        uses: ad-m/github-push-action@v0.8.0
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          branch: ${{ github.ref_name }}
-          force: true
+        run: |
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
+          git push origin main
           
       - name: 📦 Upload artifacts
         uses: actions/upload-artifact@v4
@@ -96,7 +99,5 @@ jobs:
           path: |
             whitelist.txt
             whitelist.yaml
-            whitelist.json
             blacklist.txt
             blacklist.yaml
-            blacklist.json
