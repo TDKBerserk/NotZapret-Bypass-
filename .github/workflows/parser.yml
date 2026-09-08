@@ -1,0 +1,178 @@
+name: 🔄 NotZapret Parser Auto-Update
+
+on:
+  # Автоматический запуск каждые 6 часов
+  schedule:
+    - cron: '0 */6 * * *'
+  
+  # Ручной запуск из интерфейса GitHub
+  workflow_dispatch:
+  
+  # Запуск при изменении файлов конфигурации
+  push:
+    paths:
+      - 'tg.txt'
+      - 'sources.txt'
+      - 'sni_list.txt'
+      - 'ip_list.txt'
+      - 'NotZapret_Parser.py'
+
+jobs:
+  parse_and_update:
+    name: 🚀 Парсинг и обновление конфигов
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+      # 1. Загрузка репозитория
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      # 2. Настройка Python
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+          
+      # 3. Установка зависимостей
+      - name: 📦 Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          
+      # 4. Установка Xray
+      - name: 🔧 Install Xray
+        run: |
+          wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
+          unzip -q Xray-linux-64.zip
+          chmod +x xray
+          sudo mv xray /usr/local/bin/
+          xray version
+          
+      # 5. Установка Hysteria2
+      - name: 🔧 Install Hysteria2
+        run: |
+          wget -q https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64
+          chmod +x hysteria-linux-amd64
+          sudo mv hysteria-linux-amd64 /usr/local/bin/hysteria2
+          hysteria2 version || true
+          
+      # 6. Запуск парсера
+      - name: ⚡ Run NotZapret Parser
+        env:
+          API_ID: ${{ secrets.API_ID }}
+          API_HASH: ${{ secrets.API_HASH }}
+          MT_PROTO: ${{ secrets.MT_PROTO || 'socks5' }}
+          MT_PROXY_HOST: ${{ secrets.MT_PROXY_HOST || '127.0.0.1' }}
+          MT_PROXY_PORT: ${{ secrets.MT_PROXY_PORT || '1080' }}
+        run: |
+          echo "📡 Starting parser..."
+          python NotZapret_Parser.py
+          
+      # 7. Создание бэкапа предыдущих результатов
+      - name: 💾 Backup previous results
+        run: |
+          mkdir -p backup
+          cp whitelist.* blacklist.* backup/ 2>/dev/null || true
+          
+      # 8. Проверка результатов
+      - name: ✅ Check results
+        run: |
+          echo "📊 Результаты:"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          if [ -f whitelist.txt ]; then
+            WHITE_COUNT=$(wc -l < whitelist.txt)
+            echo "✅ WHITELIST: $WHITE_COUNT конфигов"
+          else
+            echo "❌ whitelist.txt не создан"
+          fi
+          
+          if [ -f blacklist.txt ]; then
+            BLACK_COUNT=$(wc -l < blacklist.txt)
+            echo "❌ BLACKLIST: $BLACK_COUNT конфигов"
+          else
+            echo "ℹ️ blacklist.txt не создан (возможно нет нерабочих)"
+          fi
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          
+      # 9. Коммит изменений
+      - name: 📝 Commit results
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          # Добавляем все файлы результатов
+          git add whitelist.* blacklist.* || true
+          
+          # Проверяем есть ли изменения
+          if git diff --staged --quiet; then
+            echo "ℹ️ Нет изменений для коммита"
+          else
+            git commit -m "🔄 Auto-update: $(date -u '+%Y-%m-%d %H:%M:%S')"
+            echo "✅ Изменения закоммичены"
+          fi
+          
+      # 10. Push изменений
+      - name: 📤 Push changes
+        uses: ad-m/github-push-action@v0.8.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          branch: ${{ github.ref_name }}
+          force: true
+          
+      # 11. Сохранение артефактов
+      - name: 📦 Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: notzapret-results-${{ github.run_number }}
+          retention-days: 30
+          compression-level: 9
+          path: |
+            whitelist.txt
+            whitelist.yaml
+            whitelist.json
+            blacklist.txt
+            blacklist.yaml
+            blacklist.json
+            backup/
+            
+      # 12. Уведомление в Telegram (опционально)
+      - name: 📨 Send Telegram notification
+        if: success() && secrets.TELEGRAM_BOT_TOKEN != ''
+        run: |
+          WHITE_COUNT=$(wc -l < whitelist.txt 2>/dev/null || echo "0")
+          BLACK_COUNT=$(wc -l < blacklist.txt 2>/dev/null || echo "0")
+          MESSAGE="✅ NotZapret Parser обновлен!
+          
+          📊 WHITELIST: $WHITE_COUNT конфигов
+          ❌ BLACKLIST: $BLACK_COUNT конфигов
+          ⏰ $(date -u '+%Y-%m-%d %H:%M:%S') UTC
+          🔗 https://github.com/${{ github.repository }}"
+          
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d text="$MESSAGE" \
+            -d parse_mode="HTML"
+          
+      # 13. Очистка
+      - name: 🧹 Cleanup
+        run: |
+          rm -rf backup
+          rm -rf temp_*
+          echo "🧹 Очистка завершена"
+          
+      # 14. Успешное завершение
+      - name: ✅ Done
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🎉 Парсинг успешно завершен!"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
+          echo "📁 Ссылки на результаты:"
+          echo "📄 https://raw.githubusercontent.com/${{ github.repository }}/main/whitelist.txt"
+          echo "📄 https://raw.githubusercontent.com/${{ github.repository }}/main/whitelist.yaml"
+          echo "📄 https://raw.githubusercontent.com/${{ github.repository }}/main/blacklist.txt"
+          echo "📄 https://raw.githubusercontent.com/${{ github.repository }}/main/blacklist.yaml"
