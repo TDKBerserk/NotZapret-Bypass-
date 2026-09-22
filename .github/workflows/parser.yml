@@ -11,18 +11,40 @@ permissions:
 jobs:
   parser:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
-      - run: pip install requests
+          python-version: '3.11'
+
+      - run: pip install requests PySocks
+
+      - name: Bump open-files limit
+        run: ulimit -n 65536 || true
+
+      - name: Download xray-core
+        run: |
+          curl -fsSL -o xray.zip https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
+          unzip -o xray.zip xray -d .
+          chmod +x ./xray
+          ./xray version
+
       - name: Run collector
-        run: python collector.py
+        run: python collector.py --xray-path ./xray
+
+      - name: Build per-country balancer JSONs
+        run: python build_balancer.py --all
+
       - name: Commit results
         run: |
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
-          git add whitelist.txt blacklist.txt whitelist_base64.txt blacklist_base64.txt all_configs.txt summary.json
+          git add wifi.txt inet.txt wifi_base64.txt inet_base64.txt wifi.yaml inet.yaml \
+                  whitelist.txt blacklist.txt whitelist_base64.txt blacklist_base64.txt \
+                  whitelist.yaml blacklist.yaml \
+                  all_configs.txt balancer.json summary.json details.json balancer/
           git commit -m "Auto-update: $(date -u '+%Y-%m-%d %H:%M:%S')" || exit 0
+          git pull --rebase --autostash
           git push
