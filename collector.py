@@ -75,7 +75,7 @@ EXCLUDE_FILE = "exclude.txt"
 PREV_ALL_FILE = "all_configs.txt"
 
 TELEGRAM_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-HTTP_TIMEOUT = 10
+HTTP_TIMEOUT = 8
 TEST_URL = "https://www.gstatic.com/generate_204"
 
 IPAPI_BATCH_URL = "http://ip-api.com/batch"
@@ -444,7 +444,7 @@ class PortPool:
             self._ports.append(port)
 
 
-def real_check(key: str, xray_path: str, port_pool: "PortPool", timeout: float = 8.0) -> float | None:
+def real_check(key: str, xray_path: str, port_pool: "PortPool", timeout: float = 6.0) -> float | None:
     """Поднимает временный процесс xray-core с одним outbound и локальным
     SOCKS5-инбаундом, проксирует через него запрос на TEST_URL. 200/204 —
     конфиг реально работает (не просто открыт порт). Возвращает пинг в мс."""
@@ -764,10 +764,10 @@ def build_balancer_config(items: list[dict], group_tag: str) -> dict:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--channel-workers", type=int, default=5)
-    ap.add_argument("--fetch-workers", type=int, default=20, help="параллельных скачиваний подписок")
+    ap.add_argument("--fetch-workers", type=int, default=80, help="параллельных скачиваний подписок")
     ap.add_argument("--tcp-workers", type=int, default=300, help="параллельность дешёвого TCP-прекчека")
     ap.add_argument("--tcp-timeout", type=float, default=2.5)
-    ap.add_argument("--xray-workers", type=int, default=20, help="параллельность реальной xray-проверки")
+    ap.add_argument("--xray-workers", type=int, default=40, help="параллельность реальной xray-проверки")
     ap.add_argument("--xray-path", default="./xray", help="путь к бинарнику xray-core")
     ap.add_argument("--max-per-endpoint", type=int, default=2,
                      help="не больше стольки конфигов с одного ip:port идёт на дорогую xray-проверку")
@@ -802,6 +802,7 @@ def main():
     all_sub_links: set[str] = set()
 
     print(f"Обхожу {len(channels)} Telegram-каналов...")
+    _t_channels = time.time()
     with ThreadPoolExecutor(max_workers=args.channel_workers) as pool:
         futures = {pool.submit(fetch_channel_html, ch): ch for ch in channels}
         for fut in as_completed(futures):
@@ -818,6 +819,8 @@ def main():
         all_sub_links.update(sources)
 
     print(f"Скачиваю {len(all_sub_links)} ссылок-подписок...")
+    print(f"  [время] каналы: {time.time() - _t_channels:.0f}с")
+    _t_sources = time.time()
     with ThreadPoolExecutor(max_workers=args.fetch_workers) as pool:
         futures = {pool.submit(fetch_subscription, url): url for url in all_sub_links}
         for fut in as_completed(futures):
@@ -853,6 +856,8 @@ def main():
 
     # ---- Фаза 1: дешёвый TCP-прекчек по уникальным серверам -------------
     print("Фаза 1/2: TCP-прекчек...")
+    print(f"  [время] скачивание источников: {time.time() - _t_sources:.0f}с")
+    _t_tcp = time.time()
     alive_endpoints: list[tuple[str, int]] = []
     with ThreadPoolExecutor(max_workers=args.tcp_workers) as pool:
         futures = {pool.submit(tcp_alive, ip, port, args.tcp_timeout): (ip, port)
@@ -863,6 +868,7 @@ def main():
                 alive_endpoints.append(ep)
 
     print(f"Живых по TCP серверов: {len(alive_endpoints)}")
+    print(f"  [время] TCP-прекчек: {time.time() - _t_tcp:.0f}с")
 
     # ---- Ограничиваем количество кандидатов для дорогой xray-проверки ---
     candidates: list[str] = []
@@ -875,6 +881,7 @@ def main():
 
     print(f"Фаза 2/2: реальная проверка через xray-core ({len(candidates)} конфигов, "
           f"{args.xray_workers} воркеров)...")
+    _t_xray = time.time()
 
     port_pool = PortPool()
     results = []
@@ -897,6 +904,7 @@ def main():
                              "category": category, "ping_ms": ping_ms})
 
     print(f"Живых (реально проверено xray-core) конфигов: {len(results)}. Определяю страны...")
+    print(f"  [время] xray-проверка: {time.time() - _t_xray:.0f}с")
     countries = lookup_countries([r["ip"] for r in results])
     for r in results:
         r["country"] = countries.get(r["ip"])
@@ -972,4 +980,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
