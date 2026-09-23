@@ -234,6 +234,8 @@ def parse_sni(key: str) -> str | None:
 
 
 def resolve_ip(host: str) -> str | None:
+    if not host or len(host) > 253:
+        return None
     try:
         socket.inet_aton(host)
         return host
@@ -241,7 +243,10 @@ def resolve_ip(host: str) -> str | None:
         pass
     try:
         return socket.gethostbyname(host)
-    except socket.gaierror:
+    except (socket.gaierror, UnicodeError, ValueError, OSError):
+        # UnicodeError — idna-кодек падает на "лейбл пустой или слишком
+        # длинный" (мусорный host из битой ссылки-источника); это не сбой
+        # DNS, а мусорные данные на входе — просто пропускаем такой хост.
         return None
 
 
@@ -967,3 +972,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
