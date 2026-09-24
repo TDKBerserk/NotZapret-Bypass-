@@ -5,6 +5,8 @@ collector.py — NotZapret | Bypass — сборщик и проверка VPN-�
 Источники конфигов:
   - Telegram-каналы (tg.txt) — публичная страница https://t.me/s/<channel>
   - Внешние подписки (sources.txt) — прямые raw-ссылки
+  - Папка servers/ — файлы, которые кладёт туда внешний checker-репозиторий
+    (sources-checker): уже проверенные им конфиги/подписки
   - Ручные конфиги (my_configs.txt, опционально) — свои ключи построчно
   - Прошлый запуск (all_configs.txt) — carry-over, чтобы не терять рабочие
     конфиги, если источники временно недоступны
@@ -68,6 +70,7 @@ import requests
 
 CHANNELS_FILE = "tg.txt"
 SOURCES_FILE = "sources.txt"
+SERVERS_DIR = "servers"
 MANUAL_FILE = "my_configs.txt"
 WHITELIST_IP_FILE = "ip_list.txt"
 WHITELIST_SNI_FILE = "sni_list.txt"
@@ -158,6 +161,27 @@ def load_sources_list(path: str) -> list[str]:
         if line and not line.startswith("#") and line.startswith(("http://", "https://")):
             links.append(line)
     return links
+
+
+def load_servers_dir(path: str) -> tuple[set[str], set[str]]:
+    """Читает все .txt файлы из папки servers/ (кладёт туда внешний
+    checker-репозиторий) — каждая строка либо готовый ключ (vless://...),
+    либо ссылка на подписку (http/https), в точности как строки sources.txt."""
+    direct_keys: set[str] = set()
+    sub_links: set[str] = set()
+    dir_path = Path(path)
+    if not dir_path.exists():
+        return direct_keys, sub_links
+    for f in sorted(dir_path.glob("*.txt")):
+        for line in f.read_text(encoding="utf-8", errors="ignore").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith(KEY_PREFIXES):
+                direct_keys.add(line)
+            elif line.startswith(("http://", "https://")):
+                sub_links.add(line)
+    return direct_keys, sub_links
 
 
 def load_manual_configs(path: str) -> set[str]:
@@ -774,6 +798,7 @@ def main():
     ap.add_argument("--max-candidates", type=int, default=6000,
                      help="если живых эндпоинтов больше — берётся случайная выборка")
     ap.add_argument("--no-sources", action="store_true", help="не подключать sources.txt")
+    ap.add_argument("--no-servers-dir", action="store_true", help="не подключать папку servers/")
     args = ap.parse_args()
 
     if not shutil.which(args.xray_path) and not Path(args.xray_path).exists():
@@ -817,6 +842,14 @@ def main():
         sources = load_sources_list(SOURCES_FILE)
         print(f"📄 Внешних источников в {SOURCES_FILE}: {len(sources)}")
         all_sub_links.update(sources)
+
+    if not args.no_servers_dir:
+        servers_dir_keys, servers_dir_links = load_servers_dir(SERVERS_DIR)
+        if servers_dir_keys or servers_dir_links:
+            print(f"📁 Из папки {SERVERS_DIR}/: {len(servers_dir_keys)} прямых ключей, "
+                  f"{len(servers_dir_links)} ссылок-подписок (от checker-репозиториев)")
+            all_direct_keys.update(servers_dir_keys)
+            all_sub_links.update(servers_dir_links)
 
     print(f"Скачиваю {len(all_sub_links)} ссылок-подписок...")
     print(f"  [время] каналы: {time.time() - _t_channels:.0f}с")
